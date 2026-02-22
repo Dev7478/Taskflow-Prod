@@ -1,0 +1,355 @@
+Below is your step-by-step implementation with fully qualified file names in the Vite project (`taskflowv3_fe`) structure.
+
+
+# 🏗 Project Structure (Final)
+taskflowv3_fe/
+│
+├─ src/
+│  ├─ App.jsx
+│  ├─ main.jsx
+│  ├─ index.css
+│  │
+│  ├─ context/
+│  │   └─ AuthContext.jsx
+│  │
+│  ├─ components/
+│  │   ├─ Header.jsx
+│  │   ├─ ProtectedRoute.jsx
+│  │   └─ RoleProtectedRoute.jsx
+│  │
+│  ├─ layout/
+│  │   └─ AppLayout.jsx
+│  │
+│  ├─ pages/
+│  │   ├─ Login.jsx
+│  │   ├─ Dashboard.jsx
+│  │   ├─ About.jsx
+│  │   ├─ Contact.jsx
+│  │   ├─ ErrorPage.jsx
+│  │   ├─ Grocery.jsx
+│  │   └─ RestaurantMenu.jsx
+│  │
+│  └─ routes/
+│      └─ appRouter.jsx
+│
+└─ package.json
+
+
+## ⚙️ 1. src/main.jsx
+=>
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { RouterProvider } from "react-router-dom";
+import { appRouter } from "./routes/appRouter";
+import { AuthProvider } from "./context/AuthContext";
+import "./index.css";
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <AuthProvider>
+      <RouterProvider router={appRouter} />
+    </AuthProvider>
+  </React.StrictMode>
+);
+
+
+## 🧩 2. src/context/AuthContext.jsx
+=>
+import { createContext, useState } from "react";
+
+export const AuthContext = createContext();
+
+export const AuthProvider = ({ children }) => {
+  const [token, setToken] = useState(() => localStorage.getItem("token"));
+  const [user, setUser] = useState(() =>
+    JSON.parse(localStorage.getItem("user") || "{}")
+  );
+
+  const login = (token, userInfo) => {
+    setToken(token);
+    setUser(userInfo);
+    localStorage.setItem("token", token);
+    localStorage.setItem("user", JSON.stringify(userInfo));
+  };
+
+  const logout = () => {
+    setToken(null);
+    setUser(null);
+    localStorage.clear();
+  };
+
+  return (
+    <AuthContext.Provider value={{ token, user, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+
+## 🧱 3. src/layout/AppLayout.jsx
+=>
+import { Outlet } from "react-router-dom";
+import Header from "../components/Header";
+
+const AppLayout = () => {
+  return (
+    <div className="app bg-gray-100 min-h-screen">
+      <Header />
+      <main className="p-6">
+        <Outlet />
+      </main>
+    </div>
+  );
+};
+
+export default AppLayout;
+
+
+## 🧭 4. src/routes/appRouter.jsx
+=>
+import { createBrowserRouter } from "react-router-dom";
+import AppLayout from "../layout/AppLayout";
+import Dashboard from "../pages/Dashboard";
+import ErrorPage from "../pages/ErrorPage";
+import ProtectedRoute from "../components/ProtectedRoute";
+import RoleProtectedRoute from "../components/RoleProtectedRoute";
+
+// Lazy load pages
+const Dashboard = React.lazy(() => import("./pages/Dashboard"));
+
+export const appRouter = createBrowserRouter([
+  {
+    path: "/",
+    element: <AppLayout />,
+    errorElement: <ErrorPage />,
+    children: [
+      {
+        path: "/auth/login",
+        element: <Login />,
+      },
+      {
+        path: "/auth/logout",
+        element: <Logout />,
+      },
+      {
+        path: "/dashboard",
+        element: (
+            <ProtectedRoute>
+                <RoleProtectedRoute allowedRoles={["ROLE_ADMIN"]}>
+                    <Suspense fallback={<p>Loading...</p>}>
+                        <Dashboard />
+                    </Suspense>
+                </RoleProtectedRoute>
+            </ProtectedRoute>
+        ),
+      },
+    ],
+  },
+]);
+
+
+## 🧰 5. src/components/ProtectedRoute.jsx
+=>
+import { Navigate } from "react-router-dom";
+import { useContext } from "react";
+import { AuthContext } from "../context/AuthContext";
+
+const ProtectedRoute = ({ children }) => {
+  const { token } = useContext(AuthContext);
+  if (!token) return <Navigate to="/" replace />;
+  return children;
+};
+
+export default ProtectedRoute;
+
+
+## 🔐 6. src/components/RoleProtectedRoute.jsx
+=>
+import { Navigate } from "react-router-dom";
+import { useContext } from "react";
+import { AuthContext } from "../context/AuthContext";
+
+const RoleProtectedRoute = ({ allowedRoles, children }) => {
+  const { token, user } = useContext(AuthContext);
+
+  if (!token) return <Navigate to="/" replace />;
+  if (allowedRoles && !allowedRoles.includes(user?.role))
+    return <Navigate to="/unauthorized" replace />;
+
+  return children;
+};
+
+export default RoleProtectedRoute;
+
+
+## 🧾 7. src/pages/Login.jsx
+=>
+import { useState, useContext } from "react";
+import { useNavigate } from "react-router-dom";
+import { AuthContext } from "../context/AuthContext";
+
+export default function Login() {
+  const { login } = useContext(AuthContext);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+
+    try {
+      const response = await fetch("http://localhost:8080/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+      if (response.ok && data.status === 200) {
+        const { token, email, role } = data.data;
+        login(token, { email, role });
+        navigate("/dashboard");
+      } else {
+        setError(data.message || "Login failed");
+      }
+    } catch (err) {
+      setError("Network error");
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white p-6 rounded-2xl shadow-md w-96"
+      >
+        <h2 className="text-2xl font-bold mb-4 text-center text-blue-600">
+          Login
+        </h2>
+        {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
+
+        <input
+          type="email"
+          placeholder="Email"
+          className="w-full p-2 mb-3 border rounded"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+
+        <input
+          type="password"
+          placeholder="Password"
+          className="w-full p-2 mb-3 border rounded"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+
+        <button
+          type="submit"
+          className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+        >
+          Login
+        </button>
+      </form>
+    </div>
+  );
+}
+
+
+## 🖥️ 8. src/pages/Dashboard.jsx
+=>
+import { useEffect, useState, useContext } from "react";
+import { AuthContext } from "../context/AuthContext";
+import { useNavigate } from "react-router-dom";
+
+export default function Dashboard() {
+  const { token, logout, user } = useContext(AuthContext);
+  const [message, setMessage] = useState("");
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!token) return;
+
+    fetch("http://localhost:8080/api/dashboard", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => res.json())
+      .then((data) => setMessage(data.data))
+      .catch(() => navigate("/"));
+  }, [token, navigate]);
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-green-50">
+      <div className="bg-white p-6 rounded-2xl shadow-md text-center">
+        <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
+        <p className="mb-2 text-gray-700">Welcome, {user?.email}</p>
+        <p className="mb-4 font-semibold">{message}</p>
+        <button
+          onClick={() => {
+            logout();
+            navigate("/");
+          }}
+          className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+        >
+          Logout
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+## 🧩 9. src/pages/ErrorPage.jsx
+=>
+import { useRouteError } from "react-router-dom";
+
+export default function ErrorPage() {
+  const error = useRouteError();
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-red-50">
+      <h1 className="text-2xl font-bold text-red-600 mb-4">Error Occurred</h1>
+      <p>{error.statusText || error.message}</p>
+    </div>
+  );
+}
+
+
+## 🧠 10. src/components/Header.jsx
+=>
+import { Link } from "react-router-dom";
+
+const Header = () => {
+  return (
+    <header className="bg-blue-600 text-white p-4 flex justify-between items-center">
+      <h1 className="text-xl font-bold">TaskFlow V3</h1>
+      <nav className="space-x-4">
+        <Link to="/">Login</Link>
+        <Link to="/about">About</Link>
+        <Link to="/contact">Contact</Link>
+        <Link to="/dashboard">Dashboard</Link>
+      </nav>
+    </header>
+  );
+};
+
+export default Header;
+
+
+## ✅ Flow Recap
+
+| Step | Action                                             | Behavior                                                     |
+| ---- | -------------------------------------------------- | ------------------------------------------------------------ |
+| 1    | User visits `/`                                    | Login page shown                                             |
+| 2    | Submit credentials                                 | `fetch('/api/auth/login')` returns JWT                       |
+| 3    | Token + user saved in `AuthContext` + localStorage | Redirect to `/dashboard`                                     |
+| 4    | Dashboard fetches data                             | `fetch('/api/dashboard', { Authorization: Bearer <token> })` |
+| 5    | Role routes                                        | `/admin` only accessible to `ROLE_ADMIN`                     |
+| 6    | Logout                                             | Clears storage and redirects to `/`                          |
+
+---
+
+Would you like me to enhance this further by adding a **global `fetchWrapper` helper** (for automatic JWT + error handling) in a `src/utils/` folder? It can reduce repetitive fetch code for all endpoints.
